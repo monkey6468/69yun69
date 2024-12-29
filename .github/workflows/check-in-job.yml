@@ -1,9 +1,9 @@
 name: Scheduled Check-In Job
 
 on:
+  workflow_dispatch:  # 允许手动触发
   schedule:
     - cron: '* * * * *'  # 每天 00:00 UTC 执行，调整为你需要的时间
-  workflow_dispatch:  # 允许手动触发
 
 jobs:
   checkin:
