@@ -3,7 +3,7 @@ name: check-in-job
 on:
   workflow_dispatch:  # 允许手动触发
   schedule:
-    - cron: '* 8 * * *'  # 每天 00:00 UTC 执行，调整为你需要的时间
+    - cron: '* * * * *'  # 每天 00:00 UTC 执行，调整为你需要的时间
 
 jobs:
   fetch:
