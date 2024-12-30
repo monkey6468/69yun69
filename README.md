@@ -2,11 +2,6 @@
 这是一个用来机场自动签到免费领取流量的自动脚本，一份代码支持多种运行环境，支持GitHub Actions、支持 Cloudflare Workers 和 Pages平台 的自动签到脚本，释放你的双手出去City Walk
 
 #
-▶️ **新人[YouTube](https://youtube.com/@AM_CLUB)** 需要您的支持，请务必帮我**点赞**、**关注**、**打开小铃铛**，***十分感谢！！！*** ✅
-</br>🎁 不要只是下载或Fork。请 **follow** 我的GitHub、给我所有项目一个 **Star** 星星（拜托了）！你的支持是我不断前进的动力！ 💖
-</br>✅**解锁更多技术请点击进入 YouTube频道[【@AM_CLUB】](https://youtube.com/@AM_CLUB) 、[【个人博客】](https://am.809098.xyz)** 、TG群[【AM科技 | 分享交流群】](https://t.me/AM_CLUBS) 、获取免费节点[【进群发送关键字: 订阅】](https://t.me/AM_CLUBS)
-
-#
 - [部署视频教程](https://youtu.be/b7AI447ZnuA)
 
 ## 一、GitHub Actions使用方法
