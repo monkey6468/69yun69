@@ -41,7 +41,7 @@ jobs:
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_ID: ${{ secrets.TG_ID }}
 
-  # 👇 保活任务（关键）
+    # 👇 保活任务（关键）
     - name: Checkout repository
       uses: actions/checkout@v4
       with:
@@ -56,5 +56,5 @@ jobs:
         git commit --allow-empty -m "$(date '+%Y-%m-%d %H:%M:%S')更新"
 
     - name: 推送远程
-      run: |
+      run:
         git push
