@@ -54,23 +54,13 @@ jobs:
           fetch-depth: 0  # 获取完整的 git 历史
           persist-credentials: true  # 保持凭证
 
-      - name: Keep repo alive
+      - name: 提交更改
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          # 检查当前分支
-          CURRENT_BRANCH=$(git branch --show-current)
-          echo "当前分支: $CURRENT_BRANCH"
-          # 只有在主分支上执行保活操作
-          if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
-            # 检查是否有未推送的更改
-            if git status --porcelain | grep -q .; then
-              echo "有未推送的更改，跳过保活操作"
-            else
-              # 只有在没有未推送更改时才执行保活操作
-              git commit --allow-empty -m "chore: keep alive [skip ci]"
-              git push origin $CURRENT_BRANCH
-            fi
-          else
-            echo "不在主分支上，跳过保活操作"
-          fi
+          git config --local user.name "actions@github.com"
+          git config --local user.email "GitHub Actions"
+          git add .
+          git commit --allow-empty -m "$(date '+%Y-%m-%d %H:%M:%S')更新"
+
+      - name: 推送远程
+        run: |
+          git push
