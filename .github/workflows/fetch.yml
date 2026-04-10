@@ -11,6 +11,9 @@ on:
   pull_request:
     branches: [ main, master ]  # PR 时触发
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 强制使用 Node.js 24
+
 jobs:
   fetch:
     runs-on: ubuntu-latest
@@ -22,7 +25,7 @@ jobs:
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'  # 更新 Node.js 版本
+        node-version: '24'  # 使用 Node.js 24
 
     - name: Install dependencies
       run: |
@@ -42,23 +45,32 @@ jobs:
   keepalive:
     runs-on: ubuntu-latest
     needs: fetch
-    if: github.event_name == 'schedule' || github.event_name == 'push'   # 在定时触发或推送时执行
+    if: github.event_name == 'schedule'   # 只在定时触发时执行
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # 获取完整的 git 历史
+          persist-credentials: true  # 保持凭证
 
       - name: Keep repo alive
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          # 检查是否有未推送的更改
-          if git status --porcelain | grep -q .; then
-            echo "有未推送的更改，跳过保活操作"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 检查当前分支
+          CURRENT_BRANCH=$(git branch --show-current)
+          echo "当前分支: $CURRENT_BRANCH"
+          # 只有在主分支上执行保活操作
+          if [ "$CURRENT_BRANCH" = "main" ] || [ "$CURRENT_BRANCH" = "master" ]; then
+            # 检查是否有未推送的更改
+            if git status --porcelain | grep -q .; then
+              echo "有未推送的更改，跳过保活操作"
+            else
+              # 只有在没有未推送更改时才执行保活操作
+              git commit --allow-empty -m "chore: keep alive [skip ci]"
+              git push origin $CURRENT_BRANCH
+            fi
           else
-            # 只有在没有未推送更改时才执行保活操作
-            git commit --allow-empty -m "chore: keep alive [skip ci]"
-            git push
+            echo "不在主分支上，跳过保活操作"
           fi
