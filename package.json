@@ -5,13 +5,9 @@
   "type": "module",
   "main": "_worker.js",
   "scripts": {
-    "start": "node _worker.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node _worker.js"
   },
   "dependencies": {
-    "node-fetch": "^3.3.2"  
-  },
-  "engines": {
-    "node": ">=24.0.0"
+    "node-fetch": "^3.2.0"  
   }
 }

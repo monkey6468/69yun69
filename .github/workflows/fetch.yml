@@ -3,16 +3,8 @@ name: check-in-job
 on:
   workflow_dispatch:  # 允许手动触发
   schedule:
-    # 表达式生成  https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
+      # 表达式生成  https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
     - cron: '0 0,6,12,18,22 * * *'  # 每天 00:00 UTC 执行，调整为你需要的时间
-    - cron: '0 0 * * 0'  # 每周日执行一次保活任务
-  push:
-    branches: [ main, master ]  # 推送代码时触发
-  pull_request:
-    branches: [ main, master ]  # PR 时触发
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  # 强制使用 Node.js 24
 
 jobs:
   fetch:
@@ -20,16 +12,17 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v2
       
     - name: Set up Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v3
       with:
-        node-version: '24'  # 使用 Node.js 24
+        node-version: '16'  # 可以根据实际需要修改 Node.js 版本
 
     - name: Install dependencies
       run: |
         npm install
+        npm install node-fetch
 
     - name: Run scheduled check-in
       run: |
@@ -40,7 +33,7 @@ jobs:
         PASSWORD: ${{ secrets.PASSWORD }}
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_ID: ${{ secrets.TG_ID }}
-
+    
     # 👇 保活任务（关键）
     - name: Checkout repository
       uses: actions/checkout@v4
