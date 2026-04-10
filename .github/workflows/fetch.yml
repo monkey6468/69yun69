@@ -3,8 +3,13 @@ name: check-in-job
 on:
   workflow_dispatch:  # 允许手动触发
   schedule:
-      # 表达式生成  https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
+    # 表达式生成  https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#schedule
     - cron: '0 0,6,12,18,22 * * *'  # 每天 00:00 UTC 执行，调整为你需要的时间
+    - cron: '0 0 * * 0'  # 每周日执行一次保活任务
+  push:
+    branches: [ main, master ]  # 推送代码时触发
+  pull_request:
+    branches: [ main, master ]  # PR 时触发
 
 jobs:
   fetch:
@@ -12,17 +17,16 @@ jobs:
     
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       
     - name: Set up Node.js
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
-        node-version: '16'  # 可以根据实际需要修改 Node.js 版本
+        node-version: '18'  # 更新 Node.js 版本
 
     - name: Install dependencies
       run: |
         npm install
-        npm install node-fetch
 
     - name: Run scheduled check-in
       run: |
@@ -34,18 +38,27 @@ jobs:
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_ID: ${{ secrets.TG_ID }}
 
-  # 👇 新增：保活任务（关键）
+  # 👇 保活任务（关键）
   keepalive:
     runs-on: ubuntu-latest
-    if: github.event_name == 'schedule'   # 只在定时触发时执行
+    needs: fetch
+    if: github.event_name == 'schedule' || github.event_name == 'push'   # 在定时触发或推送时执行
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整的 git 历史
 
       - name: Keep repo alive
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-          git commit --allow-empty -m "chore: keep alive"
-          git push 
+          # 检查是否有未推送的更改
+          if git status --porcelain | grep -q .; then
+            echo "有未推送的更改，跳过保活操作"
+          else
+            # 只有在没有未推送更改时才执行保活操作
+            git commit --allow-empty -m "chore: keep alive [skip ci]"
+            git push
+          fi
