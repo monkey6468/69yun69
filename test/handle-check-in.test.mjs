@@ -80,3 +80,37 @@ test("两者都未配置时返回配置错误", async () => {
   assert.equal(status, 500);
   assert.match(text, /缺少必要的配置参数/);
 });
+
+test("WB_TOKEN 和 WB_UID 带引号、空白或逗号时自动清理", async () => {
+  let seen = null;
+  const wb = await startServer((path, body, headers) => {
+    return { status: 200, body: { active: true, today_checked_in: true } };
+  });
+  // 需要看到请求头，改用带 header 捕获的服务器
+  await wb.close();
+  const http = await import("node:http");
+  const srv = http.createServer((req, res) => {
+    seen = req.headers;
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ active: true, today_checked_in: true }));
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  try {
+    const { status, text } = await runOnce({ DOMAIN: "", WB_TOKEN: ' "tok123", \n', WB_UID: '"uid-456",', WB_ENDPOINT: `http://127.0.0.1:${srv.address().port}` });
+    assert.equal(status, 200);
+    assert.equal(seen.authorization, "Bearer tok123");
+    assert.equal(seen["x-user-id"], "uid-456");
+    assert.match(text, /WorkBuddy：今日已签到/);
+  } finally {
+    await new Promise((r) => srv.close(r));
+  }
+});
+
+test("配置摘要显示令牌长度和格式检查结果", async () => {
+  const res = await worker.fetch(new Request("http://worker.local/"), { DOMAIN: "", WB_TOKEN: "eyJabc.def.ghi", WB_UID: "u1" });
+  const text = await res.text();
+  assert.match(text, /WB_TOKEN 长度 14/);
+  assert.match(text, /格式正常/);
+  const res2 = await worker.fetch(new Request("http://worker.local/"), { DOMAIN: "", WB_TOKEN: "not-a-jwt", WB_UID: "u1" });
+  assert.match(await res2.text(), /格式异常/);
+});

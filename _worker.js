@@ -86,7 +86,7 @@ export default {
 
         if (url.pathname === "/tg") {
             return await handleTgMsg();
-        } else if (url.pathname === `/${token}`) {
+        } else if (token && url.pathname === `/${token}`) {
             return await handleCheckIn();
         }
 
@@ -344,6 +344,17 @@ function maskSensitiveData(str, type = 'default') {
     return `${str[0]}****${str[str.length - 1]}`;
 }
 
+// 从 JSON 里复制的值常带引号、逗号或换行，这里统一清掉
+function cleanCredential(value) {
+    return String(value == null ? "" : value).trim().replace(/^["'\s]+|["',\s]+$/g, "");
+}
+
+function describeToken(tok) {
+    if (!tok) return "未配置";
+    const looksJwt = tok.startsWith("eyJ") && tok.split(".").length === 3;
+    return `长度 ${tok.length}，${looksJwt ? "格式正常" : "格式异常（应以 eyJ 开头且含两个点）"}`;
+}
+
 async function initConfig(env) {
     env = env || {};
     const get = (key) => env[key] || DEFAULTS[key];
@@ -353,16 +364,16 @@ async function initConfig(env) {
     token = get("TOKEN");
     botToken = get("TG_TOKEN");
     chatId = get("TG_ID");
-    wbToken = get("WB_TOKEN");
-    wbUid = get("WB_UID");
-    wbEnterpriseId = get("WB_ENTERPRISE_ID");
-    wbDomain = get("WB_DOMAIN");
-    wbEndpoint = get("WB_ENDPOINT");
+    wbToken = cleanCredential(get("WB_TOKEN"));
+    wbUid = cleanCredential(get("WB_UID"));
+    wbEnterpriseId = cleanCredential(get("WB_ENTERPRISE_ID"));
+    wbDomain = cleanCredential(get("WB_DOMAIN"));
+    wbEndpoint = cleanCredential(get("WB_ENDPOINT"));
 
     checkInResult = `配置信息: 
     登录地址: ${maskSensitiveData(domain, 'url')} 
     登录账号: ${maskSensitiveData(username, 'email')} 
     登录密码: ${maskSensitiveData(password)} 
-    WorkBuddy 签到: ${wbToken && wbUid ? `已启用 (uid ${maskSensitiveData(wbUid)})` : "未启用"} 
+    WorkBuddy 签到: ${wbToken && wbUid ? `已启用 (uid ${maskSensitiveData(wbUid)}，WB_TOKEN ${describeToken(wbToken)})` : "未启用"} 
     TG 推送:  ${botToken && chatId ? "已启用" : "未启用"} `;
 }
