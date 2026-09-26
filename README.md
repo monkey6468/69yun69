@@ -1,7 +1,20 @@
 # [am-check-in](https://github.com/amclubs/am-check-in)
 这是一个用来机场自动签到免费领取流量的自动脚本，一份代码支持多种运行环境，支持GitHub Actions、支持 Cloudflare Workers 和 Pages平台 的自动签到脚本，释放你的双手出去City Walk
 
-本仓库在原版基础上增加了 **WorkBuddy 每日签到领积分**：配置 `WB_TOKEN`、`WB_UID` 后，机场签到和 WorkBuddy 签到会在同一次任务里各自执行，结果合并成一条 TG 通知。两者可以只配其中一个。
+本仓库在原版基础上做了几处增强：
+- **WorkBuddy 每日签到领积分**：配置 `WB_TOKEN`、`WB_UID` 后，机场签到和 WorkBuddy 签到会在同一次任务里各自执行，结果合并成一条 TG 通知。两者可以只配其中一个。
+- **先查后签，当天只签一次**：机场先通过 `/getuserinfo` 判断今天是否已签（按北京时间），已签就不再调签到接口；WorkBuddy 先查签到状态再领取。
+- **当天已签则静默**：定时任务一天跑多次，如果所有启用的签到都已完成且没有失败，本次不发 TG 通知，只写运行日志。第一次签到成功或任何一路失败才会发通知。
+- **通知带余量信息**：机场显示本次获得、剩余流量、今日已用、套餐到期日；WorkBuddy 显示本次积分、连签天数、签到累计积分。示例：
+
+```
+执行时间: 2026-09-27 08:00:12
+🎉 签到结果
+🛫 机场：本次 +100 MB ｜ 剩余 97.1GB ｜ 今日已用 1.2GB ｜ 2026-10-30 到期
+🐱 WorkBuddy：本次 +100 积分 ｜ 连签 3 天 ｜ 签到累计 300 积分
+```
+
+机场剩余流量来自 SSPanel 的 `/gettransfer`，到期日来自 `/getuserinfo`；如果面板不提供这些接口，会自动退化为只显示签到结果。WorkBuddy 没有账户积分余额接口，“签到累计”是本活动周期内签到累计的积分。
 
 #
 - [部署视频教程](https://youtu.be/b7AI447ZnuA)
@@ -49,6 +62,7 @@ on:
 | `TOKEN` | `auto` |❌|自动签到变量 |
 | `TG_TOKEN` | `6901234567:XXXXXXXXXX0qExxxhHxxbXXX` |❌| 发送TG通知机器人的token | 
 | `TG_ID` | `6901234567` |❌| 接收TG通知的账户ID | 
+| `TG_API` | `https://api.telegram.org` |❌| Telegram API 地址，默认即可，仅测试时改 |
 | `WB_TOKEN` | `eyJhbGciOi...` |❌| WorkBuddy 登录令牌 accessToken，配置后启用 WorkBuddy 签到 |
 | `WB_UID` | `123456` |❌| WorkBuddy 用户 ID，启用 WorkBuddy 签到时必填 |
 | `WB_ENTERPRISE_ID` | `ent_xxx` |❌| WorkBuddy 企业账号的 enterpriseId，个人账号留空 |

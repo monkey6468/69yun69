@@ -7,20 +7,23 @@ const DEFAULTS = {
     TOKEN: "",             // 手动触发签到的 URL 路径，如 auto
     TG_TOKEN: "",          // Telegram 机器人 token
     TG_ID: "",             // Telegram 接收者 ID
+    TG_API: "",            // Telegram API 地址，默认 https://api.telegram.org（测试用）
     // WorkBuddy 签到
-    WB_TOKEN: "",          // WorkBuddy 桌面端登录令牌 accessToken
+    WB_TOKEN: "",          // WorkBuddy 登录令牌 accessToken（CodeBuddy CLI 凭据文件里的明文）
     WB_UID: "",            // WorkBuddy 用户 ID uid
     WB_ENTERPRISE_ID: "",  // 企业账号的 enterpriseId，个人账号留空
-    WB_DOMAIN: "",         // 会话文件中的 auth.domain，一般留空
+    WB_DOMAIN: "",         // 凭据文件中的 auth.domain，一般留空
     WB_ENDPOINT: "",       // 服务端地址，默认 https://copilot.tencent.com
 };
-
-let domain, username, password, token, botToken, chatId;
-let wbToken, wbUid, wbEnterpriseId, wbDomain, wbEndpoint;
 
 const WB_DEFAULT_ENDPOINT = "https://copilot.tencent.com";
 const WB_STATUS_PATH = "/v2/billing/meter/checkin-activity-status";
 const WB_CLAIM_PATH = "/v2/billing/meter/daily-checkin";
+const TG_DEFAULT_API = "https://api.telegram.org";
+const BROWSER_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36";
+
+let domain, username, password, token, botToken, chatId, tgApi;
+let wbToken, wbUid, wbEnterpriseId, wbDomain, wbEndpoint;
 
 let checkInResult;
 let fetch = globalThis.fetch;
@@ -51,19 +54,8 @@ async function runInNode() {
     } else {
         console.log("在 Node.js 环境中，已使用内置 fetch");
     }
-    const env = {
-        DOMAIN: process.env.DOMAIN,
-        USERNAME: process.env.USERNAME,
-        PASSWORD: process.env.PASSWORD,
-        TOKEN: process.env.TOKEN,
-        TG_TOKEN: process.env.TG_TOKEN,
-        TG_ID: process.env.TG_ID,
-        WB_TOKEN: process.env.WB_TOKEN,
-        WB_UID: process.env.WB_UID,
-        WB_ENTERPRISE_ID: process.env.WB_ENTERPRISE_ID,
-        WB_DOMAIN: process.env.WB_DOMAIN,
-        WB_ENDPOINT: process.env.WB_ENDPOINT
-    };
+    const env = {};
+    for (const key of Object.keys(DEFAULTS)) env[key] = process.env[key];
     await runScheduled(env);
 }
 
@@ -101,7 +93,8 @@ export default {
     },
 };
 
-// 机场签到与 WorkBuddy 签到各自独立执行，一个失败不影响另一个；结果合并成一条通知
+// ===== 主流程：机场与 WorkBuddy 各自独立执行，结果合并 =====
+// 静默规则：所有启用的路都是“今日已签/活动未开启”且没有失败时，不发通知，只写日志。
 async function handleCheckIn() {
     const configSummary = checkInResult;
     const airportEnabled = !!(domain && username && password);
@@ -115,52 +108,154 @@ async function handleCheckIn() {
     }
 
     const results = [];
-    let failed = false;
-
     if (airportEnabled) {
         try {
-            const cookies = await loginAndGetCookies();
-            results.push(await performCheckIn(cookies));
+            results.push({ name: "机场", ...(await airportCheckIn({ domain, username, password })) });
         } catch (error) {
             console.error("机场签到失败:", error);
-            failed = true;
-            results.push(`❌ 机场签到失败: ${error.message}`);
+            results.push({ name: "机场", status: "failed", error: error.message });
         }
     }
-
     if (workbuddyEnabled) {
         try {
-            results.push(await workbuddyCheckIn({
-                token: wbToken,
-                uid: wbUid,
-                enterpriseId: wbEnterpriseId,
-                domain: wbDomain,
-                endpoint: wbEndpoint
-            }));
+            results.push({ name: "WorkBuddy", ...(await workbuddyCheckIn({ token: wbToken, uid: wbUid, enterpriseId: wbEnterpriseId, domain: wbDomain, endpoint: wbEndpoint })) });
         } catch (error) {
             console.error("WorkBuddy 签到失败:", error);
-            failed = true;
-            results.push(`❌ WorkBuddy 签到失败: ${error.message}`);
+            results.push({ name: "WorkBuddy", status: "failed", error: error.message });
         }
     }
 
-    checkInResult = failed ? `${configSummary}\n${results.join("\n")}` : results.join("\n");
+    const failed = results.some(r => r.status === "failed");
+    const silent = !failed && results.every(r => r.status === "already" || r.status === "inactive");
+    const report = formatReport(results);
+
+    if (silent) {
+        checkInResult = `今日已全部签到，本次静默不发通知\n${report}`;
+        console.log(checkInResult);
+        return new Response(checkInResult, { status: 200 });
+    }
+
+    checkInResult = failed ? `${configSummary}\n${report}` : report;
     await sendMessage(checkInResult);
     return new Response(checkInResult, { status: failed ? 500 : 200 });
 }
 
-async function loginAndGetCookies() {
-    const loginUrl = `${domain}/auth/login`;
-    const response = await fetch(loginUrl, {
+// ===== 通知文案 =====
+export function formatReport(results) {
+    const lines = [results.some(r => r.status === "failed") ? "⚠️ 签到结果" : "🎉 签到结果"];
+    for (const r of results) {
+        if (r.name === "机场") lines.push(formatAirport(r));
+        else lines.push(formatWorkbuddy(r));
+    }
+    return lines.join("\n");
+}
+
+function formatAirport(r) {
+    if (r.status === "failed") return `❌ 机场签到失败: ${r.error}`;
+    const parts = [r.status === "claimed" ? `本次 +${r.gained || "?"}` : "今日已签"];
+    if (r.remaining) parts.push(`剩余 ${r.remaining}`);
+    if (r.todayUsed) parts.push(`今日已用 ${r.todayUsed}`);
+    if (r.expire) parts.push(`${r.expire} 到期`);
+    return `🛫 机场：${parts.join(" ｜ ")}`;
+}
+
+function formatWorkbuddy(r) {
+    if (r.status === "failed") return `❌ WorkBuddy 签到失败: ${r.error}`;
+    if (r.status === "inactive") return `🐱 WorkBuddy：签到活动未开启${r.activityName ? `（${r.activityName}）` : ""}`;
+    const parts = [];
+    if (r.status === "claimed") parts.push(`本次 +${r.credit} 积分`);
+    else parts.push(r.todayCredit ? `今日已签 +${r.todayCredit} 积分` : "今日已签");
+    if (r.isStreakDay) parts.push("连签奖励日");
+    if (r.streakDays != null) parts.push(`连签 ${r.streakDays} 天`);
+    if (r.totalCredits != null) parts.push(`签到累计 ${r.totalCredits} 积分`);
+    return `🐱 WorkBuddy：${parts.join(" ｜ ")}`;
+}
+
+// ===== 机场签到（SSPanel）=====
+// 流程：登录 → getuserinfo 判断今天是否已签（已签则不再调签到接口）→ 未签则签到 → gettransfer 取剩余流量
+export async function airportCheckIn({ domain, username, password }) {
+    const base = formatDomain(domain);
+    const cookies = await loginAndGetCookies(base, username, password);
+    const headers = {
+        "User-Agent": BROWSER_UA,
+        "Accept": "application/json, text/plain, */*",
+        "Origin": base,
+        "Referer": `${base}/user`,
+        "Cookie": cookies,
+        "X-Requested-With": "XMLHttpRequest",
+    };
+    const getJson = async (path, init = {}) => {
+        const response = await fetch(base + path, { headers, ...init });
+        const text = await response.text();
+        let body = null;
+        try { body = JSON.parse(text); } catch { body = null; }
+        return { ok: response.ok, status: response.status, body, text };
+    };
+
+    const result = { status: "claimed" };
+
+    // 1. 用户信息：上次签到时间、到期日、流量原始值（接口不可用时静默退化）
+    let user = null;
+    try {
+        const r = await getJson("/getuserinfo");
+        if (r.body && r.body.ret === 1 && r.body.info && r.body.info.user) user = r.body.info.user;
+    } catch (error) {
+        console.log("getuserinfo 不可用，跳过预检查:", error.message);
+    }
+    if (user) {
+        if (isTodayBeijing(Number(user.last_check_in_time))) result.status = "already";
+        const expire = parseExpire(user.class_expire);
+        if (expire) result.expire = expire;
+    }
+
+    // 2. 签到（仅在未签时）
+    let trafficInfo = null;
+    if (result.status !== "already") {
+        const r = await getJson("/user/checkin", { method: "POST", headers: { ...headers, "Content-Type": "application/json" } });
+        if (!r.ok) throw new Error(`签到请求失败: ${r.text}`);
+        const body = r.body || {};
+        if (body.ret === 1) {
+            result.status = "claimed";
+            const m = String(body.msg || "").match(/([\d.]+\s*[KMGT]?B)/i);
+            if (m) result.gained = m[1];
+            if (body.trafficInfo) trafficInfo = body.trafficInfo;
+        } else if (/已经签到|已签到/.test(String(body.msg || ""))) {
+            result.status = "already";
+        } else {
+            throw new Error(`签到失败: ${body.msg || "未知错误"}`);
+        }
+    }
+
+    // 3. 剩余流量：gettransfer → 签到返回的 trafficInfo → 用 getuserinfo 字节数换算
+    let transfer = null;
+    try {
+        const r = await getJson("/gettransfer");
+        if (r.body && r.body.ret === 1 && r.body.arr) transfer = r.body.arr;
+    } catch (error) {
+        console.log("gettransfer 不可用:", error.message);
+    }
+    const info = transfer || trafficInfo;
+    if (info && info.unUsedTraffic) {
+        result.remaining = info.unUsedTraffic;
+        if (info.todayUsedTraffic) result.todayUsed = info.todayUsedTraffic;
+    } else if (user && user.transfer_enable != null) {
+        const left = Number(user.transfer_enable) - Number(user.u || 0) - Number(user.d || 0);
+        if (Number.isFinite(left)) result.remaining = formatBytes(left);
+    }
+    return result;
+}
+
+async function loginAndGetCookies(base, username, password) {
+    const response = await fetch(`${base}/auth/login`, {
         method: "POST",
-        headers: { 
-            "Content-Type": "application/json", 
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36", 
-            "Accept": "application/json, text/plain, */*", 
-            "Origin": domain, 
-            "Referer": `${domain}/auth/login`
+        headers: {
+            "Content-Type": "application/json",
+            "User-Agent": BROWSER_UA,
+            "Accept": "application/json, text/plain, */*",
+            "Origin": base,
+            "Referer": `${base}/auth/login`
         },
-        body: JSON.stringify({ email: username , passwd: password, remember_me: "on", code: "" }),  
+        body: JSON.stringify({ email: username, passwd: password, remember_me: "on", code: "" }),
     });
 
     if (!response.ok) {
@@ -180,31 +275,25 @@ async function loginAndGetCookies() {
     return cookieHeader.split(',').map(cookie => cookie.split(';')[0]).join("; ");
 }
 
-async function performCheckIn(cookies) {
-    const checkInUrl = `${domain}/user/checkin`;
-    const response = await fetch(checkInUrl, {
-        method: "POST",
-        headers: {
-            'Content-Type': 'application/json',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Origin': domain,
-            'Referer': `${domain}/user/panel`,
-            'Cookie': cookies,
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-    });
+// 机场服务器按北京时间算“今天”
+function isTodayBeijing(unixSeconds) {
+    if (!Number.isFinite(unixSeconds) || unixSeconds <= 0) return false;
+    const day = (ms) => Math.floor((ms + 8 * 3600 * 1000) / 86400000);
+    return day(unixSeconds * 1000) === day(Date.now());
+}
 
-    if (!response.ok) {
-        throw new Error(`签到请求失败: ${await response.text()}`);
-    }
+function parseExpire(value) {
+    const m = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m || Number(m[1]) < 2000) return undefined;
+    return `${m[1]}-${m[2]}-${m[3]}`;
+}
 
-    const jsonResponse = await response.json();
-    if (!jsonResponse.ret) {
-        throw new Error(`签到失败: ${jsonResponse.msg || "未知错误"}`);
-    }
-
-    return `🎉 签到结果 🎉\n${jsonResponse.msg || "签到完成"}`;
+function formatBytes(bytes) {
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let value = Math.max(0, bytes);
+    let i = 0;
+    while (value >= 1024 && i < units.length - 1) { value /= 1024; i++; }
+    return `${value.toFixed(i === 0 ? 0 : 2)}${units[i]}`;
 }
 
 // ===== WorkBuddy 签到 =====
@@ -252,39 +341,40 @@ export async function workbuddyCheckIn({ token, uid, enterpriseId, domain, endpo
     };
 
     // 部分返回会包在 data 字段里，统一取一层
-    const unwrap = (body) => (body && typeof body.data === "object" && body.data !== null) ? body.data : body;
+    const unwrap = (body) => (body && typeof body.data === "object" && body.data !== null) ? body.data : (body || {});
+    const isChecked = (s) => s.today_checked_in === true || s.today_checked_in === 1;
+    const summarize = (s) => ({
+        streakDays: s.streak_days != null ? s.streak_days : undefined,
+        totalCredits: s.total_credits != null ? s.total_credits : undefined,
+        isStreakDay: !!s.is_streak_day,
+        todayCredit: s.today_credit != null ? s.today_credit : (s.daily_credit != null ? s.daily_credit : undefined),
+        activityName: s.activity_name || undefined,
+    });
 
     const status = unwrap(await post(WB_STATUS_PATH));
-    const streakOf = (s) => {
-        const parts = [];
-        if (s.streak_days != null) parts.push(`连续 ${s.streak_days} 天`);
-        if (s.total_credits != null) parts.push(`累计 ${s.total_credits} 积分`);
-        return parts.length ? `（${parts.join("，")}）` : "";
-    };
-
     if (status.active === false) {
-        return `🐱 WorkBuddy：签到活动未开启${status.activity_name ? `（${status.activity_name}）` : ""}`;
+        return { status: "inactive", ...summarize(status) };
     }
-    if (status.today_checked_in === true || status.today_checked_in === 1) {
-        return `🐱 WorkBuddy：今日已签到${streakOf(status)}`;
+    if (isChecked(status)) {
+        return { status: "already", ...summarize(status) };
     }
 
     const claim = unwrap(await post(WB_CLAIM_PATH));
     const fresh = unwrap(await post(WB_STATUS_PATH).catch(() => status));
 
     if (claim.already_checked_in) {
-        return `🐱 WorkBuddy：今日已签到${streakOf(fresh)}`;
+        return { status: "already", ...summarize(fresh) };
     }
     if (claim.credit != null) {
-        const bonus = fresh.is_streak_day ? "，连签奖励日" : "";
-        return `🎉 WorkBuddy：成功领取 ${claim.credit} 积分${bonus}${streakOf(fresh)}`;
+        return { status: "claimed", credit: claim.credit, ...summarize(fresh) };
     }
-    if (fresh.today_checked_in === true || fresh.today_checked_in === 1) {
-        return `🐱 WorkBuddy：今日已签到${streakOf(fresh)}`;
+    if (isChecked(fresh)) {
+        return { status: "already", ...summarize(fresh) };
     }
     throw new Error(`领取结果无法识别：${JSON.stringify(claim).slice(0, 200)}`);
 }
 
+// ===== Telegram =====
 async function sendMessage(msg) {
     if (!botToken || !chatId) {  
         console.log("Telegram 推送未启用. 消息内容:", msg);
@@ -298,7 +388,7 @@ async function sendMessage(msg) {
         .replace("T", " ");
     
     const message = `执行时间: ${formattedTime}\n${msg}`;
-    const tgUrl = `https://api.telegram.org/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(message)}`;
+    const tgUrl = `${tgApi}/bot${botToken}/sendMessage?chat_id=${chatId}&parse_mode=HTML&text=${encodeURIComponent(message)}`;
 
     try {
         const response = await fetch(tgUrl, { method: "GET", headers: { "User-Agent": "Mozilla/5.0", "Accept": "application/json" } });
@@ -315,18 +405,17 @@ async function sendMessage(msg) {
     }
 }
 
-
-function formatDomain(domain) {
-    if (!domain) return "";
-    return domain.includes("//") ? domain : `https://${domain}`;
-}
-
 async function handleTgMsg() {
     const message = `${checkInResult}`;
     const sendResult = await sendMessage(message);
     return new Response(sendResult, { status: 200 });
 }
 
+// ===== 配置 =====
+function formatDomain(domain) {
+    if (!domain) return "";
+    return (domain.includes("//") ? domain : `https://${domain}`).replace(/\/+$/, "");
+}
 
 function maskSensitiveData(str, type = 'default') {
     if (!str) return "N/A";
@@ -364,6 +453,7 @@ async function initConfig(env) {
     token = get("TOKEN");
     botToken = get("TG_TOKEN");
     chatId = get("TG_ID");
+    tgApi = (get("TG_API") || TG_DEFAULT_API).replace(/\/+$/, "");
     wbToken = cleanCredential(get("WB_TOKEN"));
     wbUid = cleanCredential(get("WB_UID"));
     wbEnterpriseId = cleanCredential(get("WB_ENTERPRISE_ID"));
