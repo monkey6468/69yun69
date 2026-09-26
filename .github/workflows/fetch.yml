@@ -33,6 +33,11 @@ jobs:
         PASSWORD: ${{ secrets.PASSWORD }}
         TG_TOKEN: ${{ secrets.TG_TOKEN }}
         TG_ID: ${{ secrets.TG_ID }}
+        WB_TOKEN: ${{ secrets.WB_TOKEN }}  # WorkBuddy 签到（可选）
+        WB_UID: ${{ secrets.WB_UID }}
+        WB_ENTERPRISE_ID: ${{ secrets.WB_ENTERPRISE_ID }}
+        WB_DOMAIN: ${{ secrets.WB_DOMAIN }}
+        WB_ENDPOINT: ${{ secrets.WB_ENDPOINT }}
     
     # 👇 保活任务（关键）
     - name: Checkout repository

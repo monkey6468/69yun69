@@ -1,6 +1,8 @@
 # [am-check-in](https://github.com/amclubs/am-check-in)
 这是一个用来机场自动签到免费领取流量的自动脚本，一份代码支持多种运行环境，支持GitHub Actions、支持 Cloudflare Workers 和 Pages平台 的自动签到脚本，释放你的双手出去City Walk
 
+本仓库在原版基础上增加了 **WorkBuddy 每日签到领积分**：配置 `WB_TOKEN`、`WB_UID` 后，机场签到和 WorkBuddy 签到会在同一次任务里各自执行，结果合并成一条 TG 通知。两者可以只配其中一个。
+
 #
 - [部署视频教程](https://youtu.be/b7AI447ZnuA)
 
@@ -47,6 +49,30 @@ on:
 | `TOKEN` | `auto` |❌|自动签到变量 |
 | `TG_TOKEN` | `6901234567:XXXXXXXXXX0qExxxhHxxbXXX` |❌| 发送TG通知机器人的token | 
 | `TG_ID` | `6901234567` |❌| 接收TG通知的账户ID | 
+| `WB_TOKEN` | `eyJhbGciOi...` |❌| WorkBuddy 登录令牌 accessToken，配置后启用 WorkBuddy 签到 |
+| `WB_UID` | `123456` |❌| WorkBuddy 用户 ID，启用 WorkBuddy 签到时必填 |
+| `WB_ENTERPRISE_ID` | `ent_xxx` |❌| WorkBuddy 企业账号的 enterpriseId，个人账号留空 |
+| `WB_DOMAIN` | | ❌| 会话文件里的 `auth.domain`，一般留空 |
+| `WB_ENDPOINT` | `https://copilot.tencent.com` |❌| WorkBuddy 服务端地址，默认即可 |
+
+机场三个变量（`DOMAIN`、`USERNAME`、`PASSWORD`）和 WorkBuddy 两个变量（`WB_TOKEN`、`WB_UID`）至少配置一组。
+
+## 三点五、WorkBuddy 签到说明
+WorkBuddy 签到走的是桌面端逆向出来的接口（参考 [88lin/workbuddy-auto-signin](https://github.com/88lin/workbuddy-auto-signin)），不是账号密码登录，需要把桌面端的登录令牌复制到变量里：
+
+1. 在本机安装并登录 WorkBuddy 桌面端。
+2. 打开会话文件 `workbuddy-desktop.info`：
+   - macOS：`~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info`
+   - Windows：`%APPDATA%\CodeBuddyExtension\Data\Public\auth\workbuddy-desktop.info`
+3. 文件是 JSON，取 `auth.accessToken` 填到 `WB_TOKEN`，取 `account.uid` 填到 `WB_UID`；如果 `account.enterpriseId` 有值，填到 `WB_ENTERPRISE_ID`。
+4. 如果 `auth.accessToken` 显示为 `{"$wbEncrypted":1,"envelope":...}`，说明令牌被客户端加密了，用上面参考项目的 `--doctor` / 解密能力取明文，或直接在本机跑该项目。
+
+注意事项：
+- 客户端会定期刷新令牌，令牌失效后签到会返回 401，TG 通知里会提示“令牌已失效”，此时重新复制一次 `WB_TOKEN` 即可。
+- 脚本先查签到状态，未签才领取，重复运行不会多领；签到活动未开启时会直接汇报。
+- 接口随时可能被腾讯调整，失效属正常现象。
+
+本地跑测试：`npm test`（Node 18+）。
 
 ## 四、Telegram获取token 和chat_id 的方式
 ### 1、加入 BotFather 机器人
