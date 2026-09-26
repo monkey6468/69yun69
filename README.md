@@ -60,12 +60,15 @@ on:
 ## 三点五、WorkBuddy 签到说明
 WorkBuddy 签到走的是桌面端逆向出来的接口（参考 [88lin/workbuddy-auto-signin](https://github.com/88lin/workbuddy-auto-signin)），不是账号密码登录，需要把桌面端的登录令牌复制到变量里：
 
-1. 在本机安装并登录 WorkBuddy 桌面端。
-2. 打开会话文件 `workbuddy-desktop.info`：
-   - macOS：`~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/workbuddy-desktop.info`
-   - Windows：`%APPDATA%\CodeBuddyExtension\Data\Public\auth\workbuddy-desktop.info`
+**推荐：用 CodeBuddy CLI 登录拿明文令牌**（macOS 实测可用，Linux 同理）
+
+1. 安装并登录 CLI：`npm install -g @tencent-ai/codebuddy-code`，然后运行 `codebuddy`，首次启动会引导浏览器授权登录。
+2. 登录后凭据文件在：
+   - macOS：`~/Library/Application Support/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info`
+   - Linux：`~/.local/share/CodeBuddyExtension/Data/Public/auth/Tencent-Cloud.coding-copilot.info`
 3. 文件是 JSON，取 `auth.accessToken` 填到 `WB_TOKEN`，取 `account.uid` 填到 `WB_UID`；如果 `account.enterpriseId` 有值，填到 `WB_ENTERPRISE_ID`。
-4. 如果 `auth.accessToken` 显示为 `{"$wbEncrypted":1,"envelope":...}`，说明令牌被客户端加密了，用上面参考项目的 `--doctor` / 解密能力取明文，或直接在本机跑该项目。
+
+**不推荐：WorkBuddy 桌面端的会话文件** `workbuddy-desktop.info`（同目录）。新版桌面端会把 `auth.accessToken` 加密成 `{"$wbEncrypted":1,...}`，无法直接使用；这种情况下改用上面的 CLI 方式，或直接在本机跑参考项目。
 
 注意事项：
 - 客户端会定期刷新令牌，令牌失效后签到会返回 401，TG 通知里会提示“令牌已失效”，此时重新复制一次 `WB_TOKEN` 即可。

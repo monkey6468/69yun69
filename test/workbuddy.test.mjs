@@ -104,3 +104,17 @@ test("缺少令牌或用户 ID 时抛出配置错误", async () => {
   await assert.rejects(() => workbuddyCheckIn({ token: "", uid: "u" }), /WB_TOKEN/);
   await assert.rejects(() => workbuddyCheckIn({ token: "t", uid: "" }), /WB_UID/);
 });
+
+test("领取时服务端以 HTTP 400 code 10001 表示今日已签，按已签处理", async () => {
+  const srv = await startFakeServer((path) => {
+    if (path === STATUS) return { status: 200, body: { code: 0, msg: "OK", data: { active: true, today_checked_in: false, streak_days: 1, total_credits: 100 } } };
+    if (path === CLAIM) return { status: 400, body: { code: 10001, msg: "今天已签到，请明天再来" } };
+    return { status: 404, body: {} };
+  });
+  try {
+    const report = await workbuddyCheckIn({ ...baseCfg, endpoint: srv.endpoint });
+    assert.match(report, /今日已签到/);
+  } finally {
+    await srv.close();
+  }
+});

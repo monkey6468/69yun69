@@ -241,6 +241,10 @@ export async function workbuddyCheckIn({ token, uid, enterpriseId, domain, endpo
         if (response.status === 403) {
             throw new Error(`服务端拒绝（HTTP 403）：${body.message || body.msg || text || "请检查账号权限或活动条件"}`);
         }
+        // 领取时服务端可能用 HTTP 400 + code 10001 表示"今天已签到"，这是幂等结果而不是错误
+        if (response.status === 400 && Number(body.code) === 10001) {
+            return { already_checked_in: true };
+        }
         if (!response.ok) {
             throw new Error(`接口异常（HTTP ${response.status}）：${text.slice(0, 200)}`);
         }
@@ -268,6 +272,9 @@ export async function workbuddyCheckIn({ token, uid, enterpriseId, domain, endpo
     const claim = unwrap(await post(WB_CLAIM_PATH));
     const fresh = unwrap(await post(WB_STATUS_PATH).catch(() => status));
 
+    if (claim.already_checked_in) {
+        return `🐱 WorkBuddy：今日已签到${streakOf(fresh)}`;
+    }
     if (claim.credit != null) {
         const bonus = fresh.is_streak_day ? "，连签奖励日" : "";
         return `🎉 WorkBuddy：成功领取 ${claim.credit} 积分${bonus}${streakOf(fresh)}`;
